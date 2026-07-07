@@ -1,0 +1,202 @@
+import React, { useRef, useState } from "react";
+import { AdaptiveErrorBoundary, adaptiveToast } from '@cognicatch/react';
+import { useNavigate } from "react-router-dom";
+import PromptRail from "../components/Landing/PromptRail";
+import PromptBox from "../components/Landing/PromptBox";
+import ExploreTopics from "../components/Landing/ExploreTopics";
+import { chatMultipart, chatJSON } from "../lib/api";
+
+export default function Landing() {
+  const [prompt, setPrompt] = useState("");
+  const [mode, setMode] = useState("Chat");
+  const [responseLength, setResponseLength] = useState("Medium");
+  const [showMode, setShowMode] = useState(false);
+  const [showLength, setShowLength] = useState(false);
+  const [stagedFile, setStagedFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const fileRef = useRef(null);
+  const navigate = useNavigate();
+
+  const onPickFile = () => fileRef.current?.click();
+  const onRemoveFile = () => setStagedFile(null);
+
+  const onFileChange = (e) => {
+    const f = e.target.files?.[0] ?? null;
+    setStagedFile(f);
+  };
+  const onDropZoneDragOver = (e) => e.preventDefault();
+  const onDropZoneDrop = (e) => {
+    e.preventDefault();
+    const f = e.dataTransfer.files?.[0] ?? null;
+    setStagedFile(f);
+  };
+
+  const onSend = async (override) => {
+    if (busy) return;
+    const q = (override ?? prompt).trim();
+    if (!q && !stagedFile) return;
+
+    if (mode === "Quiz") {
+      navigate(`/quiz?topic=${encodeURIComponent(q)}`, { state: { topic: q } });
+      return;
+    }
+
+    setBusy(true);
+    try {
+      if (stagedFile) {
+        const { chatId } = await chatMultipart(q || " ", [stagedFile]);
+        navigate(`/chat?chatId=${encodeURIComponent(chatId)}&q=${encodeURIComponent(q)}`);
+        return;
+      }
+      const r = await chatJSON({ q });
+      navigate(`/chat?chatId=${encodeURIComponent(r.chatId)}&q=${encodeURIComponent(q)}`);
+    } catch {
+      adaptiveToast.error("Failed to start chat", "There was a problem reaching the AI. Please try sending your prompt again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col min-h-screen w-full px-4 lg:pl-28 lg:pr-4">
+      <div className="flex-1 flex flex-col justify-center max-w-4xl mx-auto my-20 md:my-4 w-full px-2 relative z-10">
+        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold pl-4 border-l-4 border-sky-500 mb-10 tracking-tight">
+          What would you like to <span className="text-gradient">learn today?</span>
+        </h1>
+
+        <AdaptiveErrorBoundary
+          mode="manual"
+          severity="medium"
+          title="Input Area Unavailable"
+          description="An error occurred while loading the chat input or file uploader. Please refresh the page to continue."
+          theme={{
+            backgroundColor: "#0c0a09",
+            textColor: "#e7e5e4",
+            primaryColor: "#1c1917",
+            fontFamily: "'Schibsted Grotesk', sans-serif",
+            borderRadius: "24px"
+          }}>
+          
+          <PromptBox
+            value={prompt}
+            onChange={setPrompt}
+            onSend={() => onSend()}
+            onPickFile={onPickFile}
+            onRemoveFile={onRemoveFile}
+            stagedFileName={stagedFile?.name || null}
+            busy={busy}
+            onDragOver={onDropZoneDragOver}
+            onDrop={onDropZoneDrop} />
+          
+        </AdaptiveErrorBoundary>
+
+        <div className="w-full md:w-fit flex">
+          <div className="w-full md:w-fit md:min-w-fit p-2 rounded-2xl rounded-t-none glass-panel flex flex-col items-start sm:items-center border-t-0 border-r-0 border-b-0 sm:border-b">
+            <div className="flex items-start justify-between md:justify-start space-x-2 p-1.5 w-full">
+              <div className="relative">
+                <div
+                  onClick={() => setShowMode(!showMode)}
+                  className="flex items-center space-x-4 p-1.5 rounded-xl hover:bg-white/5 duration-300 transition-all cursor-pointer">
+                  
+                  <div className="flex flex-col -space-y-0.5 pr-2">
+                    <span className="text-xs text-stone-300">Prompt Mode</span>
+                    <span className="text-sm font-semibold text-white">{mode}</span>
+                  </div>
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="size-6 text-stone-400">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 15 12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9" />
+                  </svg>
+                </div>
+
+                {showMode &&
+                <div className="absolute top-full left-0 mt-2 p-1 w-36 glass-panel rounded-xl shadow-2xl z-20 animate-[scaleIn_0.15s_ease-out]">
+                    {["Chat", "Quiz"].map((opt) =>
+                  <div
+                    key={opt}
+                    onClick={() => {
+                      setMode(opt);
+                      setShowMode(false);
+                    }}
+                    className={`px-3 py-2 cursor-pointer hover:bg-stone-800 transition rounded-lg ${mode === opt ? "text-sky-400" : "text-white"}`
+                    }>
+                    
+                        {opt}
+                      </div>
+                  )}
+                  </div>
+                }
+              </div>
+
+              <div className="w-px h-8 mx-2 bg-white/10 rounded-full mt-2" />
+
+              <div className="p-1.5 rounded-xl hover:bg-white/5 duration-300 transition-all cursor-pointer min-w-fit h-fit hidden md:flex items-center space-x-4" onClick={onPickFile} title={stagedFile ? stagedFile.name : "Click or drop"}>
+                <div className="flex flex-col -space-y-0.5 pr-2">
+                  <span className="text-xs text-stone-300">{stagedFile ? "File selected" : "Add files"}</span>
+                  <span className="text-sm font-semibold text-white">{stagedFile ? stagedFile.name : "Click or drop"}</span>
+                </div>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="size-6 text-stone-400">
+                  <path
+                    fillRule="evenodd"
+                    d="M5.5 17a4.5 4.5 0 0 1-1.44-8.765 4.5 4.5 0 0 1 8.302-3.046 3.5 3.5 0 0 1 4.504 4.272A4 4 0 0 1 15 17H5.5Zm3.75-2.75a.75.75 0 0 0 1.5 0V9.66l1.95 2.1a.75.75 0 1 0 1.1-1.02l-3.25-3.5a.75.75 0 0 0-1.1 0l-3.25 3.5a.75.75 0 1 0 1.1 1.02l1.95-2.1v4.59Z"
+                    clipRule="evenodd" />
+                  
+                </svg>
+              </div>
+
+              <div className="w-px h-8 mx-2 bg-white/10 rounded-full mt-2" />
+
+              <div className="relative">
+                <div
+                  onClick={() => setShowLength(!showLength)}
+                  className="flex items-center space-x-4 p-1.5 rounded-xl hover:bg-white/5 duration-300 transition-all cursor-pointer">
+                  <div className="flex flex-col -space-y-0.5 pr-2">
+                    <span className="text-xs text-stone-300">Response Length</span>
+                    <span className="text-sm font-semibold text-white">{responseLength}</span>
+                  </div>
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="size-6 text-stone-400">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 15 12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9" />
+                  </svg>
+                </div>
+
+                {showLength &&
+                <div className="absolute top-full left-0 mt-2 p-1 w-40 glass-panel rounded-xl shadow-2xl z-20 animate-[scaleIn_0.15s_ease-out]">
+                    {["Short", "Medium", "Long"].map((opt) =>
+                  <div
+                    key={opt}
+                    onClick={() => {
+                      setResponseLength(opt);
+                      setShowLength(false);
+                    }}
+                    className={`px-3 py-2 cursor-pointer hover:bg-stone-800 transition rounded-lg ${responseLength === opt ? "text-sky-400" : "text-white"}`
+                    }>
+                    
+                        {opt}
+                      </div>
+                  )}
+                  </div>
+                }
+              </div>
+
+            </div>
+          </div>
+
+          <svg className="h-9 w-8 -ml-0.5 -mt-[2px] min-w-fit hidden md:block rotate-3" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M1 1H71C21.4764 5.44502 6.18653 20.4467 1 71V1Z" fill="rgba(255,255,255,0.02)" strokeWidth="1" stroke="rgba(255,255,255,0.05)" />
+            <defs>
+              <linearGradient id="paint0_linear_1409_7" x1="33" y1="31" x2="1" y2="1" gradientUnits="userSpaceOnUse">
+                <stop stopColor="rgba(255,255,255,0.1)" />
+                <stop offset="1" stopColor="rgba(255,255,255,0)" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+          </svg>
+
+          <PromptRail onSend={(p) => onSend(p)} />
+        </div>
+      </div>
+
+      <ExploreTopics />
+
+      <input ref={fileRef} type="file" className="hidden" onChange={onFileChange} />
+    </div>);
+
+}
